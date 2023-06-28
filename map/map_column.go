@@ -1,4 +1,4 @@
-package array
+package map
 
 import (
 	"errors"
@@ -7,61 +7,62 @@ import (
 )
 
 /**
- * len(indexKey) > 0 将切片类型的结构体，转成 map 输出，输出结果存在了 desk 中，也就是你的第一个参数
- * len(indexKey) == 0 将切片类型的结构体，转成 slice 输出，输出结果存在了 desk 中，也就是你的第一个参数
+ * indexKey == ""  && columnKey != "" 将切片类型的Map，转成 slice 输出，输出结果存在了 desk 中
+ * indexKey != ""  && columnKey == "" 将切片类型的Map，转成 map 输出，输出结果存在了 desk 中
+ * indexKey != ""  && columnKey != "" 将切片类型的Map，转成 map 输出，输出结果存在了 desk 中
  *
- * @demo 假如有下述结构体，
- * type User struct {
- *  ID   int
- *  NAME string
- * }
+ * 假如有下述切片类型 ([]map[string]interface{}) 的变量 input，
+ * [
+ *  {"id":1,"name":"zhang"},
+ *  {"id":2,"name":"li"},
+ * ]
+ *
+ * @demo 1
  * 输入：
- * @params desk &map[int64]User   desk是个指针呦！！！
- * @params input []User{User{ID:1, NAME:"zwk"}, User{ID:2, NAME:"zzz"}}
- * @params indexKey 键名 "ID"
- * @params columnKey 列名 空字符串代表返回整个结构体，反之返回结构体中的某一列
- *
- * 输出：
- * err 错误信息
- * 入参 desk 已经被赋值：map[int]User{1:User{ID:1, NAME:"zwk"}, 2:User{ID:2, NAME:"zzz"}}
- *
- * 输入：
- * @params desk &[]int   desk是个指针呦！！！
- * @params input []User{User{ID:1, NAME:"zwk"}, User{ID:2, NAME:"zzz"}}
+ * @params desk &[]int32
+ * @params input
+ * @params columnKey 列名 "id"
  * @params indexKey 键名 ""
- * @params columnKey 列名
  *
  * 输出：
  * err 错误信息
- * 入参 desk 已经被赋值：[]int{1, 2}
+ * 入参 desk 已经被赋值：[]int32{1, 2}
+ *
+ *
+ * @demo 2
+ * 输入：
+ * @params desk &map[int32]map[string]interface{}
+ * @params input
+ * @params columnKey 列名 ""
+ * @params indexKey 键名 "id"
+ *
+ * 输出：
+ * err 错误信息
+ * 入参 desk 已经被赋值：map[ 1:map{"id":1,"name":"zhang"}, 2:{"id":2,"name":"li"} ]
+ *
+ *
+ * @demo 3
+ * 输入：
+ * @params desk &map[int32]interface{}
+ * @params input
+ * @params columnKey 列名 "name"
+ * @params indexKey 键名 "id"
+ *
+ * 输出：
+ * err 错误信息
+ * 入参 desk 已经被赋值：map[ 1:"zhang", 2:"li" ]
  */
-func ArrayColumn(desk, input interface{}, columnKey, indexKey string) (err error) {
+func MapColumn(desk, input interface{}, columnKey, indexKey string) (err error) {
 	structIndexColumn := func(desk, input interface{}, columnKey, indexKey string) (err error) {
 		findStructValByIndexKey := func(curVal reflect.Value, elemType reflect.Type, indexKey, columnKey string) (indexVal, columnVal reflect.Value, err error) {
-			indexExist := false
-			columnExist := false
-			for i := 0; i < elemType.NumField(); i++ {
-				curField := curVal.Field(i)
-				if elemType.Field(i).Name == indexKey {
-					switch curField.Kind() {
-					case reflect.String, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8, reflect.Int, reflect.Float64, reflect.Float32:
-						indexExist = true
-						indexVal = curField
-					default:
-						return indexVal, columnVal, errors.New("indexKey must be int float or string")
-					}
-				}
-				if elemType.Field(i).Name == columnKey {
-					columnExist = true
-					columnVal = curField
-					continue
-				}
-			}
-			if !indexExist {
-				return indexVal, columnVal, errors.New(fmt.Sprintf("indexKey %s not found in %s's field", indexKey, elemType))
-			}
-			if len(columnKey) > 0 && !columnExist {
-				return indexVal, columnVal, errors.New(fmt.Sprintf("columnKey %s not found in %s's field", columnKey, elemType))
+			index := reflect.ValueOf(indexKey)
+			indexVal = curVal.MapIndex(index)
+
+			if columnKey != "" {
+				column := reflect.ValueOf(columnKey)
+				columnVal = curVal.MapIndex(column)
+			} else {
+				columnVal = curVal
 			}
 			return
 		}
@@ -71,9 +72,6 @@ func ArrayColumn(desk, input interface{}, columnKey, indexKey string) (err error
 			return errors.New("desk must be map")
 		}
 		deskElem := deskValue.Type().Elem()
-		if len(columnKey) == 0 && deskElem.Elem().Kind() != reflect.Struct {
-			return errors.New(fmt.Sprintf("desk's elem expect struct, got %s", deskElem.Elem().Kind()))
-		}
 
 		rv := reflect.ValueOf(input)
 		rt := reflect.TypeOf(input)
@@ -109,18 +107,8 @@ func ArrayColumn(desk, input interface{}, columnKey, indexKey string) (err error
 
 	structColumn := func(desk, input interface{}, columnKey string) (err error) {
 		findStructValByColumnKey := func(curVal reflect.Value, elemType reflect.Type, columnKey string) (columnVal reflect.Value, err error) {
-			columnExist := false
-			for i := 0; i < elemType.NumField(); i++ {
-				curField := curVal.Field(i)
-				if elemType.Field(i).Name == columnKey {
-					columnExist = true
-					columnVal = curField
-					continue
-				}
-			}
-			if !columnExist {
-				return columnVal, errors.New(fmt.Sprintf("columnKey %s not found in %s's field", columnKey, elemType))
-			}
+			column := reflect.ValueOf(columnKey)
+			columnVal = curVal.MapIndex(column)
 			return
 		}
 
@@ -160,13 +148,13 @@ func ArrayColumn(desk, input interface{}, columnKey, indexKey string) (err error
 	}
 
 	rv := reflect.ValueOf(input)
-	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
-		return errors.New("input must be map slice or array")
+	if rv.Kind() != reflect.Slice {
+		return errors.New("input must be slice")
 	}
 
 	rt := reflect.TypeOf(input)
-	if rt.Elem().Kind() != reflect.Struct {
-		return errors.New("input's elem must be struct")
+	if rt.Elem().Kind() != reflect.Map {
+		return errors.New("input's elem must be map")
 	}
 
 	if len(indexKey) > 0 {
